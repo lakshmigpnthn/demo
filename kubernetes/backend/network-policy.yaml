@@ -1,0 +1,67 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-allow-gateway-only
+  namespace: backend
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: sentinel
+spec:
+  # Apply to all backend pods
+  podSelector:
+    matchLabels:
+      app: backend
+  
+  # This policy affects ingress (incoming traffic)
+  policyTypes:
+    - Ingress
+    - Egress
+  
+  # Ingress rules - only allow from Gateway VPC CIDR
+  ingress:
+    # Allow traffic from Gateway VPC (10.1.0.0/16)
+    - from:
+        - ipBlock:
+            cidr: 10.1.0.0/16
+      ports:
+        - protocol: TCP
+          port: 8080
+    
+    # Allow traffic from within the backend namespace (for probes, etc.)
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080
+  
+  # Egress rules - allow necessary outbound traffic
+  egress:
+    # Allow DNS resolution (kube-dns)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    
+    # Allow HTTPS to AWS APIs (for IRSA, etc.)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# Default deny all ingress for namespace (defense in depth)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: backend
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress

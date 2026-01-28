@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-proxy
+  namespace: gateway
+  labels:
+    app: nginx-proxy
+    app.kubernetes.io/name: nginx-proxy
+    app.kubernetes.io/part-of: sentinel
+  annotations:
+    # Classic NLB annotations (works without AWS Load Balancer Controller)
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+    
+    # Health check configuration
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: "TCP"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: "traffic-port"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-healthy-threshold: "2"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-unhealthy-threshold: "2"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-interval: "10"
+    
+    # Cross-zone load balancing
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+spec:
+  type: LoadBalancer
+  selector:
+    app: nginx-proxy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080  # NGINX listens on 8080 (non-privileged port)
+      protocol: TCP
+---
+# Internal ClusterIP service for internal communication
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-proxy-internal
+  namespace: gateway
+  labels:
+    app: nginx-proxy
+spec:
+  type: ClusterIP
+  selector:
+    app: nginx-proxy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

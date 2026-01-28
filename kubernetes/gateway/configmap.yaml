@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-proxy-config
+  namespace: gateway
+  labels:
+    app: nginx-proxy
+    app.kubernetes.io/name: nginx-proxy
+    app.kubernetes.io/part-of: sentinel
+data:
+  nginx.conf: |
+    worker_processes auto;
+    pid /var/run/nginx.pid;
+    error_log /dev/stderr warn;
+
+    events {
+        worker_connections 1024;
+        use epoll;
+        multi_accept on;
+    }
+
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+
+        # JSON structured logging for observability
+        log_format json_combined escape=json '{'
+            '"time":"$time_iso8601",'
+            '"remote_addr":"$remote_addr",'
+            '"request":"$request",'
+            '"status":"$status",'
+            '"body_bytes_sent":"$body_bytes_sent",'
+            '"request_time":"$request_time",'
+            '"upstream_response_time":"$upstream_response_time",'
+            '"upstream_addr":"$upstream_addr",'
+            '"http_user_agent":"$http_user_agent",'
+            '"http_x_forwarded_for":"$http_x_forwarded_for"'
+        '}';
+
+        access_log /dev/stdout json_combined;
+
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 65;
+        types_hash_max_size 2048;
+
+        # Security headers
+        server_tokens off;
+
+        # Upstream configuration for backend service
+        # IMPORTANT: Update this IP after deploying the backend cluster
+        # Get the backend pod IP: kubectl --context eks-backend get pods -n backend -o wide
+        upstream backend {
+            # Backend pod IP via VPC peering (10.2.x.x range)
+            # UPDATE THIS VALUE after backend deployment
+            server 10.2.1.180:8080;
+            
+            keepalive 32;
+        }
+
+        # Rate limiting
+        limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
+
+        server {
+            # Listen on non-privileged port (runs as non-root)
+            listen 8080;
+            server_name _;
+
+            # Security headers
+            add_header X-Content-Type-Options nosniff always;
+            add_header X-Frame-Options DENY always;
+            add_header X-XSS-Protection "1; mode=block" always;
+
+            # Health check endpoint (doesn't proxy to backend)
+            location /health {
+                access_log off;
+                return 200 '{"status":"healthy","source":"gateway"}';
+                add_header Content-Type application/json;
+            }
+
+            # Proxy all /api/* requests to backend
+            location /api/ {
+                limit_req zone=api_limit burst=20 nodelay;
+
+                proxy_pass http://backend/api/;
+                proxy_http_version 1.1;
+                
+                # Connection pooling
+                proxy_set_header Connection "";
+                
+                # Forward client info
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_set_header X-Request-ID $request_id;
+
+                # Timeouts
+                proxy_connect_timeout 10s;
+                proxy_send_timeout 30s;
+                proxy_read_timeout 30s;
+
+                # Buffer settings
+                proxy_buffering on;
+                proxy_buffer_size 4k;
+                proxy_buffers 8 4k;
+            }
+
+            # Proxy root to backend for testing
+            location / {
+                proxy_pass http://backend/;
+                proxy_http_version 1.1;
+                proxy_set_header Connection "";
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+
+            # Error handling
+            error_page 502 503 504 /50x.html;
+            location = /50x.html {
+                return 503 '{"error":"Backend service unavailable","status":503}';
+                add_header Content-Type application/json;
+            }
+        }
+    }

@@ -1,0 +1,75 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway-policy
+  namespace: gateway
+  labels:
+    app.kubernetes.io/name: nginx-proxy
+    app.kubernetes.io/part-of: sentinel
+spec:
+  # Apply to all nginx-proxy pods
+  podSelector:
+    matchLabels:
+      app: nginx-proxy
+  
+  policyTypes:
+    - Ingress
+    - Egress
+  
+  # Ingress rules
+  ingress:
+    # Allow traffic from the internet (via load balancer)
+    # The NLB forwards port 80 -> targetPort 8080
+    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 8080
+    
+    # Allow traffic from within the gateway namespace
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080
+  
+  # Egress rules
+  egress:
+    # Allow traffic to Backend VPC (10.2.0.0/16) on port 8080
+    - to:
+        - ipBlock:
+            cidr: 10.2.0.0/16
+      ports:
+        - protocol: TCP
+          port: 8080
+    
+    # Allow DNS resolution (kube-dns)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    
+    # Allow HTTPS to AWS APIs (for IRSA, metadata service, etc.)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# Default deny all ingress for namespace (defense in depth)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: gateway
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress

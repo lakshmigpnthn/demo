@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: backend
+  labels:
+    app: backend
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: sentinel
+spec:
+  # ClusterIP - internal only, not exposed to internet
+  # Gateway connects directly to pod IPs via VPC peering
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+---
+# Headless service for direct pod IP discovery
+# Use this to get backend pod IPs for VPC peering
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-headless
+  namespace: backend
+  labels:
+    app: backend
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

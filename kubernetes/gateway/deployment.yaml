@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-proxy
+  namespace: gateway
+  labels:
+    app: nginx-proxy
+    app.kubernetes.io/name: nginx-proxy
+    app.kubernetes.io/part-of: sentinel
+spec:
+  replicas: 1  # Single replica for PoC (matches 1 node)
+  selector:
+    matchLabels:
+      app: nginx-proxy
+  template:
+    metadata:
+      labels:
+        app: nginx-proxy
+        app.kubernetes.io/name: nginx-proxy
+    spec:
+      # Security context for the pod
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101  # nginx user in nginx:alpine
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      
+      containers:
+        - name: nginx-proxy
+          image: nginx:1.25-alpine
+          imagePullPolicy: IfNotPresent
+          
+          ports:
+            - name: http
+              containerPort: 8080  # Non-privileged port
+              protocol: TCP
+          
+          # Resource limits and requests
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          
+          # Security context for the container
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          
+          # Health checks
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: var-cache
+              mountPath: /var/cache/nginx
+            - name: var-run
+              mountPath: /var/run
+      
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: nginx-proxy-config
+        - name: tmp
+          emptyDir: {}
+        - name: var-cache
+          emptyDir: {}
+        - name: var-run
+          emptyDir: {}
+---
+# ConfigMap for backend endpoint (update after backend deployment)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-endpoint
+  namespace: gateway
+data:
+  # UPDATE THIS after deploying backend cluster
+  # Use the backend pod IP from: kubectl get pods -n backend -o wide
+  # Or use the Internal NLB DNS from: kubectl get svc -n backend
+  endpoint: "10.2.1.180"

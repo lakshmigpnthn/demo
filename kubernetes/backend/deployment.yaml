@@ -1,0 +1,166 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: backend
+  labels:
+    app: backend
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: sentinel
+spec:
+  replicas: 1  # Single replica for PoC (matches 1 node)
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+        app.kubernetes.io/name: backend
+    spec:
+      # Security context for the pod
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101  # nginx user in nginx:alpine
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      
+      containers:
+        - name: backend
+          # Using a simple nginx image with custom config as backend
+          # In production, replace with your actual backend image
+          image: nginx:1.25-alpine
+          imagePullPolicy: IfNotPresent
+          
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          
+          # Resource limits and requests
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          
+          # Security context for the container
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          
+          # Health checks
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          
+          # Mount config and temp volumes
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: var-cache
+              mountPath: /var/cache/nginx
+            - name: var-run
+              mountPath: /var/run
+      
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: backend-config
+        - name: tmp
+          emptyDir: {}
+        - name: var-cache
+          emptyDir: {}
+        - name: var-run
+          emptyDir: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: backend
+data:
+  nginx.conf: |
+    worker_processes auto;
+    pid /var/run/nginx.pid;
+    error_log /dev/stderr warn;
+
+    events {
+        worker_connections 1024;
+        use epoll;
+        multi_accept on;
+    }
+
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+
+        log_format json_combined escape=json '{'
+            '"time":"$time_iso8601",'
+            '"remote_addr":"$remote_addr",'
+            '"request":"$request",'
+            '"status":"$status",'
+            '"body_bytes_sent":"$body_bytes_sent",'
+            '"request_time":"$request_time",'
+            '"upstream_response_time":"$upstream_response_time"'
+        '}';
+
+        access_log /dev/stdout json_combined;
+
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 65;
+        types_hash_max_size 2048;
+
+        # Security headers
+        server_tokens off;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options DENY always;
+
+        server {
+            listen 8080;
+            server_name _;
+
+            location /health {
+                access_log off;
+                return 200 '{"status":"healthy","source":"backend","message":"Hello from backend"}';
+                add_header Content-Type application/json;
+            }
+
+            location /api {
+                return 200 '{"status":"ok","source":"backend","message":"Hello from backend API","timestamp":"$time_iso8601"}';
+                add_header Content-Type application/json;
+            }
+
+            location / {
+                return 200 '{"status":"ok","source":"backend","message":"Hello from backend"}';
+                add_header Content-Type application/json;
+            }
+        }
+    }
