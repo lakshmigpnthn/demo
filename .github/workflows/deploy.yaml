@@ -85,9 +85,7 @@ jobs:
     name: Deploy Backend
     runs-on: ubuntu-latest
     needs: validate
-    if: |
-      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_backend == 'true')
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_backend == 'true'
     environment: eks-backend
     outputs:
       backend_pod_ip: ${{ steps.get-ip.outputs.pod_ip }}
@@ -99,10 +97,9 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          # Use static credentials (OIDC requires admin to create provider)
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          # Use credentials
+          role-to-assume: arn:aws:iam::721500739616:role/eks-github-actions-role
+          aws-region: us-west-2
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
@@ -162,9 +159,7 @@ jobs:
     name: Deploy Gateway
     runs-on: ubuntu-latest
     needs: deploy-backend
-    if: |
-      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_gateway == 'true')
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_gateway == 'true'
     environment: eks-gateway
     outputs:
       gateway_url: ${{ steps.get-url.outputs.url }}
@@ -176,9 +171,9 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          # Use credentials
+          role-to-assume: arn:aws:iam::721500739616:role/eks-github-actions-role
+          aws-region: us-west-2
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
@@ -246,9 +241,7 @@ jobs:
     name: Smoke Tests
     runs-on: ubuntu-latest
     needs: deploy-gateway
-    if: |
-      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
-      (github.event_name == 'workflow_dispatch')
+    if: (github.event_name == 'workflow_dispatch')
     
     steps:
       - name: Wait for DNS Propagation
