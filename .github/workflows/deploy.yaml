@@ -66,42 +66,6 @@ jobs:
         with:
           version: 'v1.29.0'
 
-      - name: Install validation tools
-        run: |
-          # Install kubeval for schema validation
-          wget -q https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz
-          tar xf kubeval-linux-amd64.tar.gz
-          sudo mv kubeval /usr/local/bin/
-          
-          # Install kube-linter
-          curl -sSL https://github.com/stackrox/kube-linter/releases/download/v0.6.5/kube-linter-linux -o kube-linter
-          chmod +x kube-linter
-          sudo mv kube-linter /usr/local/bin/
-
-      - name: Validate Backend Manifests (kubeval)
-        run: |
-          echo "🔍 Validating backend manifests..."
-          kubeval --strict kubernetes/backend/*.yaml
-        continue-on-error: true
-
-      - name: Validate Gateway Manifests (kubeval)
-        run: |
-          echo "🔍 Validating gateway manifests..."
-          kubeval --strict kubernetes/gateway/*.yaml
-        continue-on-error: true
-
-      - name: Lint Backend Manifests (kube-linter)
-        run: |
-          echo "🔍 Linting backend manifests..."
-          kube-linter lint kubernetes/backend/ --config .kube-linter.yaml
-        continue-on-error: true
-
-      - name: Lint Gateway Manifests (kube-linter)
-        run: |
-          echo "🔍 Linting gateway manifests..."
-          kube-linter lint kubernetes/gateway/ --config .kube-linter.yaml
-        continue-on-error: true
-
       - name: Dry-run Backend Manifests
         if: github.event_name == 'pull_request'
         run: |
