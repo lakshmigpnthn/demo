@@ -14,19 +14,19 @@ on:
       - main
     paths:
       - 'terraform/**'
-      - '.github/workflows/terraform.yaml'
+      - '.github/workflows/main.yml'
   pull_request:
     branches:
       - main
     paths:
       - 'terraform/**'
-      - '.github/workflows/terraform.yaml'
+      - '.github/workflows/main.yml'
   workflow_dispatch:
     inputs:
       apply:
         description: 'Apply Terraform changes'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 # Ensure only one workflow runs at a time for the same branch
